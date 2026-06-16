@@ -1,5 +1,5 @@
 # Scratch Org CI/CD — Complete Guide
-### A Basic Salesforce Project : Accounts & Contacts
+### A Basic Salesforce Project: Accounts & Contacts
 
 ---
 
