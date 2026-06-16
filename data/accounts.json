@@ -5,26 +5,20 @@
       "Name": "Acme Corp",
       "AccountTier__c": "Gold",
       "Industry": "Technology",
-      "Phone": "5550001111",
-      "BillingCity": "San Francisco",
-      "BillingState": "CA"
+      "Phone": "5550001111"
     },
     {
       "attributes": { "type": "Account", "referenceId": "AccountRef2" },
       "Name": "Globex Inc",
       "AccountTier__c": "Silver",
       "Industry": "Finance",
-      "Phone": "5550002222",
-      "BillingCity": "New York",
-      "BillingState": "NY"
+      "Phone": "5550002222"
     },
     {
       "attributes": { "type": "Account", "referenceId": "AccountRef3" },
       "Name": "Initech Solutions",
       "AccountTier__c": "Bronze",
-      "Industry": "Consulting",
-      "BillingCity": "Austin",
-      "BillingState": "TX"
+      "Industry": "Consulting"
     }
   ]
 }

@@ -8,16 +8,17 @@
     "test:unit:debug": "jest --debug"
   },
   "devDependencies": {
-    "@lwc/jest-preset": "^3.0.0",
     "@salesforce/eslint-config-lwc": "^3.5.0",
     "@salesforce/eslint-plugin-aura": "^2.1.0",
-    "@salesforce/sfdx-lwc-jest": "^3.0.0",
+    "@salesforce/sfdx-lwc-jest": "^7.1.2",
     "babel-jest": "^29.0.0",
     "jest": "^29.0.0"
   },
   "jest": {
     "preset": "@salesforce/sfdx-lwc-jest",
-    "setupFiles": ["@salesforce/sfdx-lwc-jest/setup"],
+    "setupFiles": [
+      "@salesforce/sfdx-lwc-jest/setup"
+    ],
     "collectCoverageFrom": [
       "force-app/main/default/lwc/**/*.js",
       "!force-app/main/default/lwc/**/__tests__/**"
