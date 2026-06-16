@@ -1,7 +1,6 @@
 {
-  "orgName": "Account Contact App - Dev",
-  "edition": "Developer",
-  "sourceOrg": "00Dg500000CKYMoEAP",
+  "orgName": "Account Contact App - Dev", 
+  "sourceOrg": "00Dg500000CKYMo",
   "features": ["EnableSetPasswordInApi"],
   "settings": {
     "lightningExperienceSettings": {
