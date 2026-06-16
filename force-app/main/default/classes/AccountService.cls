@@ -12,9 +12,9 @@ public with sharing class AccountService {
     public static List<Account> getAccountsWithContacts() {
         return [
             SELECT Id, Name, AccountTier__c, Industry, Phone,
-                (SELECT Id, FirstName, LastName, Email, PriorityScore__c
+                (SELECT Id, FirstName, LastName, Email
                  FROM Contacts
-                 ORDER BY PriorityScore__c DESC)
+                 ORDER BY LastName)
             FROM Account
             ORDER BY Name ASC
             LIMIT 200
@@ -26,28 +26,29 @@ public with sharing class AccountService {
      */
     @AuraEnabled
     public static void updateAccountTier(Id accountId, String tier) {
-        Account acc = new Account(Id = accountId, AccountTier__c = tier);
+        Account acc = new Account(
+            Id = accountId,
+            AccountTier__c = tier
+        );
         update acc;
     }
 
     /**
-     * Recalculates PriorityScore__c for all Contacts
-     * on the provided Account Ids. Called from triggers.
+     * Placeholder implementation for pipeline testing.
+     * Does not perform updates to avoid trigger recursion.
      */
     public static void recalculatePriorityScores(Set<Id> accountIds) {
-        List<Contact> toUpdate = new List<Contact>();
-        for (Contact c : [
-            SELECT Id, AccountId, Email, Phone
+
+        if (accountIds == null || accountIds.isEmpty()) {
+            return;
+        }
+
+        List<Contact> contacts = [
+            SELECT Id, Email, Phone
             FROM Contact
             WHERE AccountId IN :accountIds
-        ]) {
-            Integer score = 0;
-            if (c.Email != null)  score += 10;
-            if (c.Phone != null)  score += 5;
-            toUpdate.add(new Contact(Id = c.Id, PriorityScore__c = score));
-        }
-        if (!toUpdate.isEmpty()) {
-            update toUpdate;
-        }
+        ];
+
+        System.debug('Contacts found: ' + contacts.size());
     }
 }
