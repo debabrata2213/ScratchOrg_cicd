@@ -1,0 +1,56 @@
+name: Cleanup Scratch Orgs
+
+# Nightly cleanup of expired or orphaned scratch orgs.
+# Prevents hitting the Dev Hub active-org limit.
+on:
+  schedule:
+    - cron: '0 3 * * *'   # Every day at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    name: Delete expired scratch orgs
+    runs-on: ubuntu-latest
+    env:
+      SF_CONSUMER_KEY:    ${{ secrets.SF_CONSUMER_KEY }}
+      SF_DEVHUB_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
+
+    steps:
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      - name: Write JWT key
+        run: |
+          echo "${{ secrets.SF_JWT_KEY }}" > /tmp/server.key
+
+      - name: Authenticate Dev Hub
+        run: |
+          sf org login jwt \
+            --client-id "$SF_CONSUMER_KEY" \
+            --jwt-key-file /tmp/server.key \
+            --username "$SF_DEVHUB_USERNAME" \
+            --alias DevHub \
+            --set-default-dev-hub \
+            --instance-url https://login.salesforce.com
+
+      - name: List all scratch orgs
+        run: sf org list --target-dev-hub DevHub
+
+      - name: Delete expired scratch orgs
+        run: |
+          TODAY=$(date -u +%Y-%m-%d)
+          sf org list --target-dev-hub DevHub --json \
+            | jq -r --arg today "$TODAY" \
+              '.result.scratchOrgs[]
+               | select(.expirationDate != null and .expirationDate <= $today)
+               | .username' \
+            | while read username; do
+                echo "Deleting expired org: $username"
+                sf org delete scratch \
+                  --target-org "$username" \
+                  --no-prompt || echo "Could not delete $username, skipping."
+              done
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/server.key

@@ -1,0 +1,27 @@
+{
+  "records": [
+    {
+      "attributes": { "type": "Contact", "referenceId": "ContactRef1" },
+      "FirstName": "Alice", "LastName": "Smith",
+      "Email": "alice@acme-demo.com", "Phone": "5550003333",
+      "AccountId": "@AccountRef1"
+    },
+    {
+      "attributes": { "type": "Contact", "referenceId": "ContactRef2" },
+      "FirstName": "Bob", "LastName": "Jones",
+      "Email": "bob@acme-demo.com",
+      "AccountId": "@AccountRef1"
+    },
+    {
+      "attributes": { "type": "Contact", "referenceId": "ContactRef3" },
+      "FirstName": "Carol", "LastName": "White",
+      "Email": "carol@globex-demo.com", "Phone": "5550004444",
+      "AccountId": "@AccountRef2"
+    },
+    {
+      "attributes": { "type": "Contact", "referenceId": "ContactRef4" },
+      "FirstName": "Dave", "LastName": "Brown",
+      "AccountId": "@AccountRef3"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+**/jsconfig.json
+**/.eslintrc.json
+# Ignore Profiles
+profiles/*
+
+# Ignore Standard Objects
+objects/Account/*
+objects/Contact/*
+
+# Ignore Reports
+reports/*
+
+# Ignore Dashboards
+dashboards/*
+
+# Ignore Email Templates
+email/*
+
+# Ignore Managed Package Metadata
+installedPackages/*
+
+# Ignore Experience Cloud
+experiences/*
+
+# Ignore Digital Experiences
+networkBranding/*
+
+# Ignore Translations
+translations/*
+
+# Ignore Assignment Rules
+assignmentRules/*

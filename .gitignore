@@ -1,0 +1,22 @@
+.jwt/
+# Node
+node_modules/
+
+# Salesforce CLI
+.sf/
+.sfdx/
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/

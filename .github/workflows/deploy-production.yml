@@ -1,0 +1,61 @@
+name: Deploy to Production
+
+# Runs when a PR is merged into main.
+# Requires a manual approval (configured on the 'production' GitHub environment).
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    environment: production    # Requires manual approval in GitHub → Environments
+    env:
+      SF_CONSUMER_KEY:      ${{ secrets.SF_CONSUMER_KEY }}
+      SF_PROD_USERNAME:     ${{ secrets.SF_PROD_USERNAME }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      - name: Write JWT key
+        run: |
+          echo "${{ secrets.SF_JWT_KEY }}" > /tmp/server.key
+          chmod 600 /tmp/server.key
+
+      - name: Authenticate Production
+        run: |
+          sf org login jwt \
+            --client-id "$SF_CONSUMER_KEY" \
+            --jwt-key-file /tmp/server.key \
+            --username "$SF_PROD_USERNAME" \
+            --alias Production \
+            --instance-url https://login.salesforce.com
+
+      # Run a check-only deploy first (validates without committing)
+      - name: Validate deploy (check-only)
+        run: |
+          sf project deploy start \
+            --source-dir force-app \
+            --target-org Production \
+            --test-level RunLocalTests \
+            --dry-run \
+            --wait 60
+
+      # If check-only passes, run the real deploy
+      - name: Deploy to Production
+        run: |
+          sf project deploy start \
+            --source-dir force-app \
+            --target-org Production \
+            --test-level RunLocalTests \
+            --wait 60
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/server.key

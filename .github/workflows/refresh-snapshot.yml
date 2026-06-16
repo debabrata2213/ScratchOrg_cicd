@@ -1,0 +1,153 @@
+name: Refresh Snapshot
+
+# Rebuilds the baseline scratch org snapshot every Sunday at 2 AM UTC.
+# Can also be triggered manually from Actions tab.
+on:
+  schedule:
+    - cron: '0 2 * * 0'   # Every Sunday at 02:00 UTC
+  workflow_dispatch:        # Manual trigger
+
+jobs:
+  refresh-snapshot:
+    name: Rebuild baseline snapshot
+    runs-on: ubuntu-latest
+    env:
+      SF_CONSUMER_KEY:    ${{ secrets.SF_CONSUMER_KEY }}
+      SF_DEVHUB_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
+      SNAPSHOT_BASE_ALIAS: snapshot-builder-${{ github.run_id }}
+      SNAPSHOT_NAME: acct-contact-baseline-v${{ github.run_number }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      - name: Write JWT key
+        run: |
+          echo "${{ secrets.SF_JWT_KEY }}" > /tmp/server.key
+          chmod 600 /tmp/server.key
+
+      - name: Authenticate Dev Hub
+        run: |
+          sf org login jwt \
+            --client-id "$SF_CONSUMER_KEY" \
+            --jwt-key-file /tmp/server.key \
+            --username "$SF_DEVHUB_USERNAME" \
+            --alias DevHub \
+            --set-default-dev-hub \
+            --instance-url https://login.salesforce.com
+
+      # Create a fresh scratch org from the Org Shape (not the old snapshot!)
+      # This prevents drift accumulation across snapshot generations.
+      - name: Create scratch org from Org Shape
+        run: |
+          sf org create scratch \
+            --target-dev-hub DevHub \
+            --definition-file config/project-scratch-def.json \
+            --alias "$SNAPSHOT_BASE_ALIAS" \
+            --duration-days 7 \
+            --set-default \
+            --wait 15
+
+      - name: Deploy latest metadata from main
+        run: |
+          sf project deploy start \
+            --source-dir force-app \
+            --target-org "$SNAPSHOT_BASE_ALIAS" \
+            --wait 30 \
+            --test-level NoTestRun
+
+      - name: Run post-deploy setup
+        run: |
+          sf apex run \
+            --file scripts/apex/post-deploy-setup.apex \
+            --target-org "$SNAPSHOT_BASE_ALIAS"
+
+      - name: Import seed data
+        run: |
+          sf data import tree \
+            --plan data/seed-plan.json \
+            --target-org "$SNAPSHOT_BASE_ALIAS"
+
+      # Verify everything is working before snapshotting
+      - name: Run smoke tests (Apex)
+        run: |
+          sf apex run test \
+            --target-org "$SNAPSHOT_BASE_ALIAS" \
+            --test-level RunLocalTests \
+            --wait 20
+
+      # Create the new versioned snapshot (async)
+      - name: Create new snapshot
+        run: |
+          sf org create snapshot \
+            --target-dev-hub DevHub \
+            --source-org "$SNAPSHOT_BASE_ALIAS" \
+            --snapshot-name "$SNAPSHOT_NAME" \
+            --description "Auto-built from main @ ${{ github.sha }} on $(date -u +%Y-%m-%d)"
+
+      # Poll until snapshot is Active (up to 2 hours)
+      - name: Wait for snapshot to become Active
+        run: |
+          echo "Waiting for snapshot '$SNAPSHOT_NAME' to become Active..."
+          for i in $(seq 1 24); do
+            STATUS=$(sf org list snapshot \
+              --target-dev-hub DevHub \
+              --json \
+              | jq -r --arg name "$SNAPSHOT_NAME" \
+                '.result[] | select(.SnapshotName == $name) | .Status')
+            echo "Attempt $i/24 — Status: $STATUS"
+            if [ "$STATUS" = "Active" ]; then
+              echo "Snapshot is Active!"
+              exit 0
+            elif [ "$STATUS" = "Error" ]; then
+              echo "Snapshot failed with Error status."
+              exit 1
+            fi
+            sleep 300  # wait 5 minutes between polls
+          done
+          echo "Timed out waiting for snapshot."
+          exit 1
+
+      # Update the snapshot definition file in the repo so everyone picks up the new name
+      - name: Update snapshot definition in repo
+        run: |
+          echo "{\"snapshot\": \"$SNAPSHOT_NAME\"}" \
+            > config/project-scratch-def-snapshot.json
+
+      - name: Commit updated snapshot definition
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add config/project-scratch-def-snapshot.json
+          git commit -m "chore: update snapshot to $SNAPSHOT_NAME [skip ci]"
+          git push origin main
+
+      # Delete old snapshots (keep only the 3 most recent)
+      - name: Prune old snapshots (keep latest 3)
+        run: |
+          sf org list snapshot --target-dev-hub DevHub --json \
+            | jq -r '.result | sort_by(.CreatedDate) | reverse | .[3:] | .[].SnapshotName' \
+            | while read snap; do
+                echo "Deleting old snapshot: $snap"
+                sf org delete snapshot \
+                  --target-dev-hub DevHub \
+                  --snapshot "$snap" \
+                  --no-prompt || true
+              done
+
+      # Always clean up the build scratch org
+      - name: Delete snapshot builder scratch org
+        if: always()
+        run: |
+          sf org delete scratch \
+            --target-org "$SNAPSHOT_BASE_ALIAS" \
+            --no-prompt || true
+
+      - name: Cleanup JWT key
+        if: always()
+        run: rm -f /tmp/server.key

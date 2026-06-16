@@ -1,0 +1,158 @@
+name: PR Validation
+
+# Runs on every PR opened or updated against main or develop.
+# Creates an ephemeral scratch org, deploys, runs all tests, then destroys it.
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    types: [opened, synchronize, reopened]
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1: LWC Jest unit tests (no org needed)
+  # ─────────────────────────────────────────────
+  lwc-jest:
+    name: LWC Jest Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Jest
+        run: npm run test:unit -- --ci --reporters=default --reporters=jest-junit
+        env:
+          JEST_JUNIT_OUTPUT_DIR: reports/jest
+
+      - name: Upload Jest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jest-results
+          path: reports/jest
+
+  # ─────────────────────────────────────────────
+  # JOB 2: Apex tests + deploy validation on scratch org
+  # ─────────────────────────────────────────────
+  scratch-org-validation:
+    name: Scratch Org – Deploy & Apex Tests
+    runs-on: ubuntu-latest
+    needs: lwc-jest             # Only run if Jest passes
+    env:
+      SF_CONSUMER_KEY: ${{ secrets.SF_CONSUMER_KEY }}
+      SF_DEVHUB_USERNAME: ${{ secrets.SF_DEVHUB_USERNAME }}
+      SCRATCH_ORG_ALIAS: ci-pr-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Install Salesforce CLI (v2, the 'sf' command)
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli@latest
+
+      - name: Verify CLI version
+        run: sf --version
+
+      # Write the JWT key from secrets to a temp file
+      - name: Write JWT key
+        run: |
+          echo "${{ secrets.SF_JWT_KEY }}" > /tmp/server.key
+          chmod 600 /tmp/server.key
+
+      # Authenticate Dev Hub using JWT bearer flow (no browser needed)
+      - name: Authenticate Dev Hub
+        run: |
+          sf org login jwt \
+            --client-id "$SF_CONSUMER_KEY" \
+            --jwt-key-file /tmp/server.key \
+            --username "$SF_DEVHUB_USERNAME" \
+            --alias DevHub \
+            --set-default-dev-hub \
+            --instance-url https://login.salesforce.com
+
+      # Create a 1-day scratch org from the latest snapshot.
+      # Falls back to the shape-based definition if no snapshot exists yet.
+      - name: Create scratch org from snapshot
+        id: create-scratch
+        run: |
+          sf org create scratch \
+            --target-dev-hub DevHub \
+            --definition-file config/project-scratch-def-snapshot.json \
+            --alias "$SCRATCH_ORG_ALIAS" \
+            --duration-days 1 \
+            --set-default \
+            --wait 15 \
+            --no-ancestors
+        continue-on-error: true
+
+      # Fallback: use shape-based definition if snapshot not yet available
+      - name: Fallback – create scratch org from shape definition
+        if: steps.create-scratch.outcome == 'failure'
+        run: |
+          sf org create scratch \
+            --target-dev-hub DevHub \
+            --definition-file config/project-scratch-def.json \
+            --alias "$SCRATCH_ORG_ALIAS" \
+            --duration-days 1 \
+            --set-default \
+            --wait 15
+
+      # Deploy all source metadata from force-app
+      - name: Deploy metadata
+        run: |
+          sf project deploy start \
+            --source-dir force-app \
+            --target-org "$SCRATCH_ORG_ALIAS" \
+            --wait 30 \
+            --test-level NoTestRun
+
+      # Run post-deploy Apex script (assigns perm sets etc.)
+      - name: Run post-deploy setup
+        run: |
+          sf apex run \
+            --file scripts/apex/post-deploy-setup.apex \
+            --target-org "$SCRATCH_ORG_ALIAS"
+
+      # Run all local Apex tests with code coverage
+      - name: Run Apex tests
+        id: apex-tests
+        run: |
+          sf apex run test \
+            --target-org "$SCRATCH_ORG_ALIAS" \
+            --test-level RunLocalTests \
+            --code-coverage \
+            --result-format human \
+            --output-dir reports/apex \
+            --wait 20
+
+      # Upload Apex test reports regardless of pass/fail
+      - name: Upload Apex test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apex-test-results
+          path: reports/apex
+
+      # ALWAYS delete the scratch org — even if tests fail
+      - name: Delete scratch org
+        if: always()
+        run: |
+          sf org delete scratch \
+            --target-org "$SCRATCH_ORG_ALIAS" \
+            --no-prompt || true
+
+      # Shred the key file
+      - name: Cleanup JWT key
+        if: always()
+        run: rm -f /tmp/server.key
