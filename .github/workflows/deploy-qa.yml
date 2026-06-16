@@ -1,7 +1,5 @@
 name: Deploy to QA Sandbox
 
-# Runs when a PR is merged into develop.
-# Deploys validated metadata to the QA/Integration sandbox.
 on:
   push:
     branches:
@@ -11,10 +9,7 @@ jobs:
   deploy-qa:
     name: Deploy → QA Sandbox
     runs-on: ubuntu-latest
-    environment: qa        # Uses GitHub environment for approval rules / protection
-    env:
-      SF_CONSUMER_KEY: ${{ secrets.SF_CONSUMER_KEY }}
-      SF_QA_USERNAME:  ${{ secrets.SF_QA_USERNAME }}
+    environment: qa
 
     steps:
       - name: Checkout
@@ -23,21 +18,22 @@ jobs:
       - name: Install Salesforce CLI
         run: npm install -g @salesforce/cli@latest
 
-      - name: Write JWT key
+      - name: Write SFDX Auth URL
         run: |
-          echo "${{ secrets.SF_JWT_KEY }}" > /tmp/server.key
-          chmod 600 /tmp/server.key
+          echo "${{ secrets.SF_QA_AUTH_URL }}" > /tmp/auth.txt
+          chmod 600 /tmp/auth.txt
 
-      - name: Authenticate QA sandbox
+      - name: Authenticate QA Sandbox
         run: |
-          sf org login jwt \
-            --client-id "$SF_CONSUMER_KEY" \
-            --jwt-key-file /tmp/server.key \
-            --username "$SF_QA_USERNAME" \
-            --alias QASandbox \
-            --instance-url https://test.salesforce.com
+          sf org login sfdx-url \
+            --sfdx-url-file /tmp/auth.txt \
+            --alias QASandbox
 
-      - name: Deploy to QA (RunSpecifiedTests for speed)
+      - name: Verify Authentication
+        run: |
+          sf org display --target-org QASandbox
+
+      - name: Deploy to QA
         run: |
           sf project deploy start \
             --source-dir force-app \
@@ -48,4 +44,5 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f /tmp/server.key
+        run: |
+          rm -f /tmp/auth.txt
